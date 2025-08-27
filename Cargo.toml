@@ -1,0 +1,12 @@
+[package]
+name = "pulsar-rs-perf"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+log = "0.4.27"
+logforth = "0.27.0"
+pulsar = "6.3.1"
+tokio = { version = "1.47.1", features = ["full"] }
+anyhow = { version = "1.0" }
+chrono = "0.4.41"
