@@ -178,6 +178,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-rate-limiter"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d970eeeca527be6346a04cc878e9657d58146d9765f4c1d8217760d4a4862c5d"
+dependencies = [
+ "futures",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
 name = "async-signal"
 version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2053,6 +2064,7 @@ name = "pulsar-rs-perf"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-rate-limiter",
  "chrono",
  "log",
  "logforth",
@@ -2861,6 +2873,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c28327cf380ac148141087fbfb9de9d7bd4e84ab5d2c28fbc911d753de8a7081"
 dependencies = [
  "rustls",
+ "tokio",
+]
+
+[[package]]
+name = "tokio-stream"
+version = "0.1.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eca58d7bba4a75707817a2c44174253f9236b2d5fbd055602e9d5c07c139a047"
+dependencies = [
+ "futures-core",
+ "pin-project-lite",
  "tokio",
 ]
 
