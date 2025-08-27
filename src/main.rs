@@ -86,17 +86,17 @@ fn main() {
                 while running.load(Ordering::Relaxed) {
                     // TODO: make the interval configurable
                     std::thread::sleep(Duration::from_secs(1));
-                        let perc = perc.lock().unwrap();
-                        info!(
-                            "Throughput: {:.3} KB/s, Latency (ms): median: {:.3} p50: {:.3}, p90: {:.3}, p99: {:.3}, p999: {:.3}, max: {:.3}",
-                            messages_count.load(Ordering::Relaxed) as f64 / start.elapsed().as_millis() as f64 * 1000.0,
-                            perc.median().unwrap_or(0.0),
-                            perc.percentile(0.5).unwrap().unwrap_or(0.0),
-                            perc.percentile(0.9).unwrap().unwrap_or(0.0),
-                            perc.percentile(0.99).unwrap().unwrap_or(0.0),
-                            perc.percentile(0.999).unwrap().unwrap_or(0.0),
-                            perc.percentile(1.0).unwrap().unwrap_or(0.0)
-                        );
+                    let perc = perc.lock().unwrap();
+                    info!(
+                        "Throughput: {:.3} KB/s, Latency (ms): median: {:.3} p50: {:.3}, p90: {:.3}, p99: {:.3}, p999: {:.3}, max: {:.3}",
+                        messages_count.load(Ordering::Relaxed) as f64 / start.elapsed().as_millis() as f64 * 1000.0,
+                        perc.median().unwrap_or(0.0),
+                        perc.percentile(0.5).unwrap().unwrap_or(0.0),
+                        perc.percentile(0.9).unwrap().unwrap_or(0.0),
+                        perc.percentile(0.99).unwrap().unwrap_or(0.0),
+                        perc.percentile(0.999).unwrap().unwrap_or(0.0),
+                        perc.percentile(1.0).unwrap().unwrap_or(0.0)
+                    );
                 }
             })
             .unwrap(),
