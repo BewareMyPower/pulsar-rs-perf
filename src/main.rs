@@ -12,9 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::time::{Duration, Instant};
+use std::{
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
+};
 
-use log::{Record, error, info, warn};
+use inc_stats::Percentiles;
+use log::{Record, debug, error, info, warn};
 use logforth::{Diagnostic, Layout, append, filter::EnvFilter};
 use pulsar::{
     Error, Pulsar, TokioExecutor,
@@ -46,6 +53,8 @@ impl Layout for CustomLayout {
     }
 }
 
+type SharedPercentiles = Arc<Mutex<Percentiles<f64>>>;
+
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     logforth::builder()
@@ -63,13 +72,35 @@ async fn main() -> Result<(), Error> {
     // TODO: make batching configurable
     let mut producer = client.producer().with_topic(topic).build().await?;
 
-    for i in 0..100 {
+    let perc: SharedPercentiles = Arc::new(Mutex::new(Percentiles::new()));
+    let running = Arc::new(AtomicBool::new(true));
+    let running_clone = running.clone();
+    let perc_clone = perc.clone();
+    tokio::spawn(async move {
+        while running_clone.load(Ordering::Relaxed) {
+            // TODO: make the interval configurable
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            let perc = perc_clone.lock().unwrap();
+            info!(
+                "Latency percentiles (ms): median: {:.3} p50: {:.3}, p90: {:.3}, p99: {:.3}, p999: {:.3}, max: {:.3}",
+                perc.median().unwrap_or(0.0),
+                perc.percentile(0.5).unwrap().unwrap_or(0.0),
+                perc.percentile(0.9).unwrap().unwrap_or(0.0),
+                perc.percentile(0.99).unwrap().unwrap_or(0.0),
+                perc.percentile(0.999).unwrap().unwrap_or(0.0),
+                perc.percentile(1.0).unwrap().unwrap_or(0.0)
+            );
+        }
+    });
+
+    for i in 0..10000 {
         // TODO: make the payload configurable or read from a file
-        let payload = vec![i; 1024]; // 1KB payload
+        let payload = vec!['a' as u8; 1024]; // 1KB payload
 
         // We have to await first, otherwise the producer cannot be borrowed in the next send
         let start = Instant::now();
         let index = i;
+        let perc = perc.clone();
         match producer.send_non_blocking(payload).await {
             Err(pulsar::Error::Producer(ProducerError::Connection(ConnectionError::SlowDown))) => {
                 // TODO: support resend the message
@@ -81,25 +112,37 @@ async fn main() -> Result<(), Error> {
             }
             Ok(send_future) => {
                 // Await the send future in a separate task to avoid blocking the next send
-                tokio::spawn(handle_send(send_future, start, index.into()));
+                tokio::spawn(handle_send(send_future, start, index.into(), perc));
             }
         }
+
+        // TODO: add rate limiter
+        tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
     }
 
+    // TODO: use a graceful stop mechanism
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+
     info!("Finished sleeping");
 
     Ok(())
 }
 
-async fn handle_send(future: SendFuture, start: Instant, index: usize) {
+async fn handle_send(
+    future: SendFuture,
+    start: Instant,
+    index: i64,
+    perc: SharedPercentiles
+) {
     match future.await {
         Err(e) => {
             error!("Failed to send {}: {:?}", index, e);
         }
         Ok(receipt) => {
-            let elapsed = start.elapsed().as_millis();
-            info!(
+            let elapsed_ms = start.elapsed().as_micros() as f64 / 1000.0;
+            let mut perc = perc.lock().unwrap();
+            perc.add(elapsed_ms);
+            debug!(
                 "Sent message {} to {} after {} ms",
                 index,
                 receipt
@@ -112,7 +155,7 @@ async fn handle_send(future: SendFuture, start: Instant, index: usize) {
                         msg_id.batch_index.unwrap_or(-1)
                     ))
                     .unwrap_or(String::from("unknown")),
-                elapsed
+                elapsed_ms
             );
         }
     }
