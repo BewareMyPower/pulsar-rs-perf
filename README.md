@@ -34,6 +34,7 @@ RUST_LOG=info ./target/release/pulsar-rs-perf my-topic \
 
 Options for the main command:
 - `--service-url`: The Pulsar service URL (default: `pulsar://localhost:6650`)
+- `--auth-token`: The authentication token (default: `None`, which means no authentication)
 
 Options for `produce` sub-command:
 - `--rate`: The message producing rate (default: `500` messages per second)

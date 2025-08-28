@@ -52,6 +52,10 @@ struct Options {
     #[arg(long, default_value_t = String::from("pulsar://localhost:6650"))]
     service_url: String,
 
+    /// The token to authenticate the target topic
+    #[arg(long)]
+    auth_token: Option<String>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -88,8 +92,17 @@ fn main() {
 
     match options.command {
         Commands::Produce { rate, num_messages } => {
-            println!("Produce {} messages with {} messages per second", num_messages, rate);
-            produce::produce(options.topic, options.service_url, rate, num_messages);
+            println!(
+                "Produce {} messages with {} messages per second",
+                num_messages, rate
+            );
+            produce::produce(
+                options.topic,
+                options.service_url,
+                options.auth_token,
+                rate,
+                num_messages,
+            );
         }
     }
 }

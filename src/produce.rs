@@ -24,14 +24,20 @@ use async_rate_limiter::RateLimiter;
 use inc_stats::Percentiles;
 use log::{debug, error, info, warn};
 use pulsar::{
-    Error, Pulsar, TokioExecutor,
+    Authentication, Error, Pulsar, TokioExecutor,
     error::{ConnectionError, ProducerError},
     producer::SendFuture,
 };
 
 type SharedPercentiles = Arc<Mutex<Percentiles<f64>>>;
 
-pub fn produce(topic: String, service_url: String, rate: u32, num_messages: u32) {
+pub fn produce(
+    topic: String,
+    service_url: String,
+    token: Option<String>,
+    rate: u32,
+    num_messages: u32,
+) {
     let perc: SharedPercentiles = Arc::new(Mutex::new(Percentiles::new()));
     let perc_clone = perc.clone();
     let running = Arc::new(AtomicBool::new(true));
@@ -48,15 +54,32 @@ pub fn produce(topic: String, service_url: String, rate: u32, num_messages: u32)
                     .enable_all()
                     .build()
                     .unwrap();
-                rt.block_on(send_loop(
-                    topic,
-                    service_url,
-                    perc_clone,
-                    running_clone,
-                    messages_count_clone,
-                    rate,
-                    num_messages,
-                ))
+                rt.block_on(async move {
+                    let client = match token {
+                        None => Pulsar::builder(service_url, TokioExecutor),
+                        Some(token) => {
+                            Pulsar::builder(service_url, TokioExecutor).with_auth(Authentication {
+                                name: "token".into(),
+                                data: token.into_bytes(),
+                            })
+                        }
+                    }
+                    .build()
+                    .await
+                    .unwrap();
+                    send_loop(
+                        client,
+                        topic,
+                        perc_clone,
+                        running_clone,
+                        messages_count_clone,
+                        rate,
+                        num_messages,
+                    )
+                    .await
+                    .unwrap();
+                    Ok::<(), Error>(())
+                })
                 .unwrap();
             })
             .unwrap(),
@@ -84,15 +107,14 @@ pub fn produce(topic: String, service_url: String, rate: u32, num_messages: u32)
 }
 
 async fn send_loop(
+    client: Pulsar<TokioExecutor>,
     topic: String,
-    service_url: String,
     perc: SharedPercentiles,
     running: Arc<AtomicBool>,
     messages_count: Arc<AtomicI64>,
     rate: u32,
     num_messages: u32,
 ) -> Result<(), Error> {
-    let client: Pulsar<_> = Pulsar::builder(service_url, TokioExecutor).build().await?;
     let mut producer = client.producer().with_topic(topic).build().await?;
 
     let rl = RateLimiter::new(rate as usize);
