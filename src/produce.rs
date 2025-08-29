@@ -123,10 +123,10 @@ async fn send_loop(
         let payload = vec!['a' as u8; 1024]; // 1KB payload
 
         // We have to await first, otherwise the producer cannot be borrowed in the next send
-        let start = Instant::now();
         let index = i;
         let perc = perc.clone();
         rl.acquire().await;
+        let start = Instant::now();
         match producer.send_non_blocking(payload).await {
             Err(pulsar::Error::Producer(ProducerError::Connection(ConnectionError::SlowDown))) => {
                 // TODO: support resend the message
