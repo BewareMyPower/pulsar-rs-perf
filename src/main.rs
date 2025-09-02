@@ -56,6 +56,11 @@ struct Options {
     #[arg(long)]
     auth_token: Option<String>,
 
+    /// Whether to record the spawn latency since each send_non_blocking future is awaited
+    /// in a task scheduled by tokio::spawn.
+    #[arg(long, default_value_t = false)]
+    spawn_latency: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -100,6 +105,7 @@ fn main() {
                 options.topic,
                 options.service_url,
                 options.auth_token,
+                options.spawn_latency,
                 rate,
                 num_messages,
             );

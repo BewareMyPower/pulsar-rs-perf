@@ -35,6 +35,7 @@ pub fn produce(
     topic: String,
     service_url: String,
     token: Option<String>,
+    spawn_latency: bool,
     rate: u32,
     num_messages: u32,
 ) {
@@ -44,6 +45,12 @@ pub fn produce(
     let running_clone = running.clone();
     let messages_count = Arc::new(AtomicI64::new(0));
     let messages_count_clone = messages_count.clone();
+    let spawn_perc: Option<SharedPercentiles> = if spawn_latency {
+        Some(Arc::new(Mutex::new(Percentiles::new())))
+    } else {
+        None
+    };
+    let spawn_perc_clone = spawn_perc.clone();
 
     let mut threads = Vec::with_capacity(2);
     threads.push(
@@ -71,6 +78,7 @@ pub fn produce(
                         client,
                         topic,
                         perc_clone,
+                        spawn_perc_clone,
                         running_clone,
                         messages_count_clone,
                         rate,
@@ -89,16 +97,26 @@ pub fn produce(
         while running.load(Ordering::Relaxed) {
             // TODO: make it configurable
             std::thread::sleep(Duration::from_secs(1));
-            let perc = perc.lock().unwrap();
-            info!(
-                "Throughput: {:.3} KB/s, Latency (ms): median: {:.3} p50: {:.3}, p90: {:.3}, p99: {:.3}, p999: {:.3}, max: {:.3}",
-                messages_count.load(Ordering::Relaxed) as f64 / start.elapsed().as_millis() as f64 * 1000.0,
-                perc.median().unwrap_or(0.0),
-                perc.percentile(0.5).unwrap().unwrap_or(0.0),
-                perc.percentile(0.9).unwrap().unwrap_or(0.0),
-                perc.percentile(0.99).unwrap().unwrap_or(0.0),
-                perc.percentile(0.999).unwrap().unwrap_or(0.0),
-                perc.percentile(1.0).unwrap().unwrap_or(0.0));
+            {
+                let perc = perc.lock().unwrap();
+                info!(
+                    "Throughput: {:.3} KB/s, Latency (ms): median: {:.3} p50: {:.3}, p90: {:.3}, p99: {:.3}, p999: {:.3}, max: {:.3}",
+                    messages_count.load(Ordering::Relaxed) as f64 / start.elapsed().as_millis() as f64 * 1000.0,
+                    perc.median().unwrap_or(0.0),
+                    perc.percentile(0.5).unwrap().unwrap_or(0.0),
+                    perc.percentile(0.9).unwrap().unwrap_or(0.0),
+                    perc.percentile(0.99).unwrap().unwrap_or(0.0),
+                    perc.percentile(0.999).unwrap().unwrap_or(0.0),
+                    perc.percentile(1.0).unwrap().unwrap_or(0.0));
+            }
+            let spawn_perc = spawn_perc.clone();
+            if let Some(spawn_perc) = spawn_perc {
+                let spawn_perc = spawn_perc.lock().unwrap();
+                info!("Spawn latency (ms): p50: {:.3}, p90: {:.3}, p99: {:.3}",
+                    spawn_perc.percentile(0.5).unwrap().unwrap_or(0.0),
+                    spawn_perc.percentile(0.9).unwrap().unwrap_or(0.0),
+                    spawn_perc.percentile(0.99).unwrap().unwrap_or(0.0));
+            }
         }
     }).unwrap());
     for t in threads {
@@ -110,6 +128,7 @@ async fn send_loop(
     client: Pulsar<TokioExecutor>,
     topic: String,
     perc: SharedPercentiles,
+    spawn_perc: Option<SharedPercentiles>,
     running: Arc<AtomicBool>,
     messages_count: Arc<AtomicI64>,
     rate: u32,
@@ -138,14 +157,19 @@ async fn send_loop(
             }
             Ok(send_future) => {
                 // Await the send future in a separate task to avoid blocking the next send
-                tokio::spawn(handle_send(send_future, start, index.into(), perc));
+                let spawn_perc = spawn_perc.clone();
+                tokio::spawn(async move {
+                    if let Some(spawn_perc) = spawn_perc {
+                        let mut spawn_perc = spawn_perc.lock().unwrap();
+                        let elapsed_ms = start.elapsed().as_micros() as f64 / 1000.0;
+                        spawn_perc.add(elapsed_ms);
+                    }
+                    handle_send(send_future, start, index.into(), perc).await;
+                });
             }
         }
         messages_count.fetch_add(1, Ordering::Relaxed);
     }
-
-    // TODO: use a graceful stop mechanism
-    tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
     info!("Finished sleeping");
     running.store(false, Ordering::Relaxed);
