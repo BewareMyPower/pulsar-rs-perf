@@ -20,7 +20,7 @@ edition = "2024"
 [dependencies]
 log = "0.4.27"
 logforth = "0.27.0"
-pulsar = "6.3.1"
+pulsar = "6.4.0"
 tokio = { version = "1.47.1", features = ["full"] }
 anyhow = { version = "1.0" }
 chrono = "0.4.41"

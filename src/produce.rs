@@ -24,7 +24,7 @@ use async_rate_limiter::RateLimiter;
 use inc_stats::Percentiles;
 use log::{debug, error, info, warn};
 use pulsar::{
-    Authentication, Error, Pulsar, TokioExecutor,
+    Authentication, Error, ProducerOptions, Pulsar, TokioExecutor,
     error::{ConnectionError, ProducerError},
     producer::SendFuture,
 };
@@ -134,7 +134,15 @@ async fn send_loop(
     rate: u32,
     num_messages: u32,
 ) -> Result<(), Error> {
-    let mut producer = client.producer().with_topic(topic).build().await?;
+    let mut producer = client
+        .producer()
+        .with_topic(topic)
+        .with_options(ProducerOptions {
+            block_queue_if_full: true,
+            ..Default::default()
+        })
+        .build()
+        .await?;
 
     let rl = RateLimiter::new(rate as usize);
     for i in 0..num_messages {
